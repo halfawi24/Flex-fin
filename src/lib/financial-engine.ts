@@ -381,28 +381,74 @@ export function analyzeAP(records: APRecord[]): APAnalysis {
   };
 }
 
+/**
+ * Classify an account code into its type.
+ * Handles both standard (4-digit: 4010, 5010, 6010) and
+ * Saudi/GCC (6-digit: 100101, 200101, 400101, 500103) formats.
+ */
+function classifyAccount(code: string): 'asset' | 'liability' | 'equity' | 'revenue' | 'cogs' | 'opex' | 'unknown' {
+  const trimmed = code.trim();
+  const firstChar = trimmed.charAt(0);
+  const firstTwo = trimmed.substring(0, 2);
+
+  // 6-digit Saudi/GCC format (1xxxxx, 2xxxxx, etc.)
+  if (trimmed.length >= 6) {
+    if (firstChar === '1') return 'asset';
+    if (firstChar === '2') return 'liability';
+    if (firstChar === '3') return 'equity';
+    if (firstChar === '4') return 'revenue';
+    if (firstChar === '5') {
+      // In Saudi systems, 5xxxxx can be COGS or general expenses
+      // 50xxxx / 51xxxx typically = COGS, 52xxxx+ = OpEx
+      if (firstTwo === '50' || firstTwo === '51') return 'cogs';
+      return 'opex';
+    }
+    if (firstChar === '6' || firstChar === '7' || firstChar === '8') return 'opex';
+  }
+
+  // Standard 4-digit format
+  if (firstChar === '4') return 'revenue';
+  if (firstChar === '5') return 'cogs';
+  if (firstChar === '6' || firstChar === '7' || firstChar === '8') return 'opex';
+  if (firstChar === '1') return 'asset';
+  if (firstChar === '2') return 'liability';
+  if (firstChar === '3') return 'equity';
+
+  return 'unknown';
+}
+
 export function analyzeGL(records: GLRecord[]): GLAnalysis {
   let revenue = 0;
   let cogs = 0;
   let opex = 0;
   const opexBreakdown: Record<string, number> = {};
 
-  const revenueKeywords = ['revenue', 'sales', 'income', 'service', 'consulting', 'product'];
-  const cogsKeywords = ['cogs', 'cost of goods', 'materials', 'direct labor', 'manufacturing'];
+  const revenueKeywords = ['revenue', 'sales', 'income', 'service', 'consulting', 'product',
+    'إيراد', 'مبيعات', 'دخل', 'خدمات'];
+  const cogsKeywords = ['cogs', 'cost of goods', 'materials', 'direct labor', 'manufacturing',
+    'تكلفة مبيعات', 'مواد', 'عمالة مباشرة'];
 
   records.forEach(r => {
     const acct = r.account.toString().trim();
     const desc = r.description.toLowerCase();
+    const classification = classifyAccount(acct);
 
-    if (acct.startsWith('4') || (r.amount > 0 && revenueKeywords.some(kw => desc.includes(kw)))) {
+    // Revenue accounts
+    if (classification === 'revenue' || (r.amount > 0 && revenueKeywords.some(kw => desc.includes(kw)))) {
       revenue += Math.abs(r.amount);
-    } else if (acct.startsWith('5') || cogsKeywords.some(kw => desc.includes(kw))) {
+    }
+    // COGS accounts
+    else if (classification === 'cogs' || cogsKeywords.some(kw => desc.includes(kw))) {
       cogs += Math.abs(r.amount);
-    } else if (acct.startsWith('6') || acct.startsWith('7') || acct.startsWith('8') || r.amount < 0) {
+    }
+    // OpEx accounts (including Saudi 5xxxxx expenses when not COGS)
+    else if (classification === 'opex') {
       opex += Math.abs(r.amount);
       const category = r.description || `Account ${acct}`;
       opexBreakdown[category] = (opexBreakdown[category] || 0) + Math.abs(r.amount);
     }
+    // Balance sheet items with negative net = could indicate payables/liabilities
+    // We skip assets/liabilities/equity for P&L analysis
   });
 
   return {

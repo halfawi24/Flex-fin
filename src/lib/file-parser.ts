@@ -264,7 +264,8 @@ export function normalizeGLData(parsed: ParsedFile): ParsedFile {
 }
 
 /**
- * Convert AP aging report to standard AP format
+ * Convert AP aging report to standard AP format.
+ * Handles comma-formatted amounts (e.g., "5,750.00") and skips total/summary rows.
  */
 export function normalizeAPAgingData(parsed: ParsedFile): ParsedFile {
   // AP aging has vendor names as rows with aging bucket amounts
@@ -273,6 +274,15 @@ export function normalizeAPAgingData(parsed: ParsedFile): ParsedFile {
   const col61_90 = detectColumnMultilingual(parsed.headers, "aging_61_90");
   const col91_120 = detectColumnMultilingual(parsed.headers, "aging_91_120");
   const colOlder = detectColumnMultilingual(parsed.headers, "aging_older");
+
+  // Known total/summary row labels to skip
+  const totalLabels = [
+    "حسابات دائنة مستحقة متأخرة",
+    "حسابات مدينة مستحقة متأخرة",
+    "الإجمالي",
+    "total",
+    "المجموع",
+  ];
 
   // If this looks like an aging report, convert to standard AP format
   if (col1_30 || col31_60 || col61_90) {
@@ -284,12 +294,21 @@ export function normalizeAPAgingData(parsed: ParsedFile): ParsedFile {
       let vendor = "";
       for (const h of parsed.headers) {
         const val = row[h];
-        if (val && isNaN(parseFloat(val.replace(/,/g, ""))) && val.length > 2) {
-          vendor = val;
+        if (val && val.trim().length > 2) {
+          // Check if it's a number (skip numeric columns)
+          const cleanVal = val.replace(/,/g, "").trim();
+          if (!isNaN(parseFloat(cleanVal)) && cleanVal.match(/^\d/)) continue;
+          vendor = val.trim();
           break;
         }
       }
       if (!vendor) return;
+
+      // Skip total/summary rows
+      const isTotal = totalLabels.some((label) =>
+        vendor.includes(label) || vendor.toLowerCase().includes("total")
+      );
+      if (isTotal) return;
 
       // Create individual AP records from aging buckets
       const buckets = [
@@ -302,7 +321,9 @@ export function normalizeAPAgingData(parsed: ParsedFile): ParsedFile {
 
       buckets.forEach(({ col, daysBack }) => {
         if (!col) return;
-        const amt = parseFloat(String(row[col] || "0").replace(/,/g, ""));
+        // Handle comma-formatted amounts like "5,750.00"
+        const rawVal = String(row[col] || "").replace(/,/g, "").trim();
+        const amt = parseFloat(rawVal) || 0;
         if (amt > 0) {
           const billDate = new Date(today.getTime() - daysBack * 24 * 60 * 60 * 1000);
           newRows.push({
