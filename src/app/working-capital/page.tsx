@@ -14,7 +14,7 @@ export default function WorkingCapitalPage() {
     return <EmptyState title="No Working Capital Data" description="Upload your AR, AP, and GL data or load demo data to see working capital analysis." />;
   }
 
-  const { ar, ap, ccc, assumptions, forecast } = state.analysis;
+  const { ar, ap, ccc, assumptions, forecast, dataSources } = state.analysis;
   const wcRequired = (assumptions.m1Revenue / 30) * Math.max(ccc, 0);
   const netWC = ar.outstandingAR - ap.outstandingAP;
   const avgMonthlyRev = forecast.reduce((s, m) => s + m.revenue, 0) / 12;

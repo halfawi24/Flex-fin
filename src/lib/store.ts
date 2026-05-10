@@ -18,7 +18,7 @@ export interface AppContextType {
   setError: (error: string | null) => void;
   setFiles: (files: { ar: string | null; ap: string | null; gl: string | null }) => void;
   setCustomAssumptions: (assumptions: Partial<Assumptions>) => void;
-  runAnalysis: (ar: string, ap: string, gl: string, customAssumptions?: Partial<Assumptions>) => void;
+  runAnalysis: (ar: string | null, ap: string | null, gl: string | null, customAssumptions?: Partial<Assumptions>) => void;
   loadDemo: () => void;
 }
 

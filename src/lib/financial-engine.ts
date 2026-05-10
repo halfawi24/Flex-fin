@@ -124,6 +124,12 @@ export interface BudgetVariance {
   status: 'On Track' | 'Over' | 'Under';
 }
 
+export interface DataSources {
+  hasAR: boolean;
+  hasAP: boolean;
+  hasGL: boolean;
+}
+
 export interface FullAnalysis {
   ar: ARAnalysis;
   ap: APAnalysis;
@@ -135,6 +141,7 @@ export interface FullAnalysis {
   budgetVariance: BudgetVariance[];
   ccc: number;
   executiveSummary: string;
+  dataSources: DataSources;
 }
 
 // ============ CSV PARSING ============
@@ -559,28 +566,46 @@ export function computeBudgetVariance(assumptions: Assumptions, gl: GLAnalysis):
   ];
 }
 
+// ============ DEFAULT EMPTY RESULTS ============
+
+function emptyAR(): ARAnalysis {
+  return { dso: 30, totalAR: 0, outstandingAR: 0, collectionRate: 0, avgInvoice: 0, monthlyRevenueEst: 0, aging: { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 }, invoiceCount: 0 };
+}
+
+function emptyAP(): APAnalysis {
+  return { dpo: 45, totalAP: 0, outstandingAP: 0, paymentRate: 0, avgBill: 0, monthlyCOGSEst: 0, billCount: 0 };
+}
+
+function emptyGL(): GLAnalysis {
+  return { revenue: 0, cogs: 0, opex: 0, grossProfit: 0, ebitda: 0, opexBreakdown: {} };
+}
+
 // ============ FULL ANALYSIS ============
 
 export function runFullAnalysis(
-  arRecords: ARRecord[],
-  apRecords: APRecord[],
-  glRecords: GLRecord[],
+  arRecords: ARRecord[] | null,
+  apRecords: APRecord[] | null,
+  glRecords: GLRecord[] | null,
   customAssumptions?: Partial<Assumptions>
 ): FullAnalysis {
-  const ar = analyzeAR(arRecords);
-  const ap = analyzeAP(apRecords);
-  const gl = analyzeGL(glRecords);
+  const hasAR = arRecords !== null && arRecords.length > 0;
+  const hasAP = apRecords !== null && apRecords.length > 0;
+  const hasGL = glRecords !== null && glRecords.length > 0;
+
+  const ar = hasAR ? analyzeAR(arRecords) : emptyAR();
+  const ap = hasAP ? analyzeAP(apRecords) : emptyAP();
+  const gl = hasGL ? analyzeGL(glRecords) : emptyGL();
 
   const defaults: Assumptions = {
     openingCash: 150000,
-    m1Revenue: gl.revenue > 0 ? gl.revenue : 50000,
+    m1Revenue: gl.revenue > 0 ? gl.revenue : (hasAR ? ar.monthlyRevenueEst : 50000),
     growthRate: 0.05,
     cogsPct: gl.revenue > 0 ? gl.cogs / gl.revenue : 0.35,
     monthlyOpex: gl.opex > 0 ? gl.opex : 25000,
     monthlyCapex: 5000,
     taxRate: 0.21,
-    arDays: ar.dso,
-    apDays: ap.dpo,
+    arDays: hasAR ? ar.dso : 30,
+    apDays: hasAP ? ap.dpo : 45,
     locSize: 100000,
     locRate: 0.08,
     loanAmount: 75000,
@@ -594,12 +619,12 @@ export function runFullAnalysis(
   const forecast = computeForecast(assumptions);
   const scenarios = computeScenarios(assumptions);
   const funding = computeFunding(assumptions, forecast);
-  const budgetVariance = computeBudgetVariance(assumptions, gl);
-  const ccc = ar.dso - ap.dpo;
+  const budgetVariance = hasGL ? computeBudgetVariance(assumptions, gl) : [];
+  const ccc = (hasAR ? ar.dso : assumptions.arDays) - (hasAP ? ap.dpo : assumptions.apDays);
 
-  const executiveSummary = generateExecutiveSummary(assumptions, ar, ap, gl, forecast, scenarios, funding, ccc);
+  const executiveSummary = generateExecutiveSummary(assumptions, ar, ap, gl, forecast, scenarios, funding, ccc, { hasAR, hasAP, hasGL });
 
-  return { ar, ap, gl, assumptions, forecast, scenarios, funding, budgetVariance, ccc, executiveSummary };
+  return { ar, ap, gl, assumptions, forecast, scenarios, funding, budgetVariance, ccc, executiveSummary, dataSources: { hasAR, hasAP, hasGL } };
 }
 
 // ============ EXECUTIVE SUMMARY ============
@@ -612,7 +637,8 @@ function generateExecutiveSummary(
   forecast: ForecastMonth[],
   scenarios: { base: ScenarioResult; best: ScenarioResult; worst: ScenarioResult },
   funding: FundingMetrics,
-  ccc: number
+  ccc: number,
+  dataSources?: DataSources
 ): string {
   const totalRev = forecast.reduce((s, m) => s + m.revenue, 0);
   const totalEbitda = forecast.reduce((s, m) => s + m.ebitda, 0);

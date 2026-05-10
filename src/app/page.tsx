@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/lib/store";
-import { Upload, FileText, Play, CheckCircle2, AlertCircle, X } from "lucide-react";
+import { Upload, FileText, Play, CheckCircle2, AlertCircle, X, Info } from "lucide-react";
 
 type FileType = "ar" | "ap" | "gl";
 
@@ -88,11 +88,15 @@ export default function UploadPage() {
     setFiles((prev) => ({ ...prev, [type]: { file: null, content: null, status: "empty" } }));
   }, []);
 
-  const allLoaded = files.ar.status === "loaded" && files.ap.status === "loaded" && files.gl.status === "loaded";
+  const loadedCount = [files.ar, files.ap, files.gl].filter((f) => f.status === "loaded").length;
+  const hasAnyFile = loadedCount > 0;
 
   const handleAnalyze = useCallback(() => {
-    if (!files.ar.content || !files.ap.content || !files.gl.content) return;
-    runAnalysis(files.ar.content, files.ap.content, files.gl.content);
+    const arContent = files.ar.status === "loaded" ? files.ar.content : null;
+    const apContent = files.ap.status === "loaded" ? files.ap.content : null;
+    const glContent = files.gl.status === "loaded" ? files.gl.content : null;
+    if (!arContent && !apContent && !glContent) return;
+    runAnalysis(arContent, apContent, glContent);
     router.push("/dashboard");
   }, [files, runAnalysis, router]);
 
@@ -123,7 +127,7 @@ export default function UploadPage() {
 
       {/* Upload Cards */}
       <section className="flex-1 px-6 pb-16">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {(Object.keys(fileConfig) as FileType[]).map((type) => {
             const config = fileConfig[type];
             const fileState = files[type];
@@ -211,13 +215,25 @@ export default function UploadPage() {
           })}
         </div>
 
+        {/* Info banner about partial uploads */}
+        <div className="max-w-5xl mx-auto mb-6">
+          <div className="flex items-start gap-2 p-3 border border-border rounded-lg bg-muted/30 text-xs text-muted-foreground">
+            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <p>
+              Upload <strong>any combination</strong> of files. With all 3 you get the full analysis.
+              With 1 or 2 files, you get partial insights — AR gives DSO/aging, AP gives DPO/payment metrics,
+              GL gives P&amp;L and forecasts. Missing data uses industry-standard defaults.
+            </p>
+          </div>
+        </div>
+
         {/* Analyze Button */}
         <div className="max-w-5xl mx-auto text-center">
           <button
             onClick={handleAnalyze}
-            disabled={!allLoaded || state.isLoading}
+            disabled={!hasAnyFile || state.isLoading}
             className={`inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-md transition-all ${
-              allLoaded
+              hasAnyFile
                 ? "bg-primary text-primary-foreground hover:opacity-90 shadow-md"
                 : "bg-muted text-muted-foreground cursor-not-allowed"
             }`}
@@ -230,7 +246,9 @@ export default function UploadPage() {
             ) : (
               <>
                 <Play className="w-4 h-4" />
-                Run Full Analysis
+                {hasAnyFile
+                  ? `Run Analysis (${loadedCount}/3 files)`
+                  : "Upload at least 1 file to start"}
               </>
             )}
           </button>

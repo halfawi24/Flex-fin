@@ -31,7 +31,7 @@ export default function DashboardPage() {
     return <EmptyState title="No Data Loaded" description="Upload your AR, AP, and GL files or load demo data to see the executive dashboard." />;
   }
 
-  const { forecast, ar, ap, funding, ccc, assumptions, gl, scenarios } = state.analysis;
+  const { forecast, ar, ap, funding, ccc, assumptions, gl, scenarios, dataSources } = state.analysis;
   const totalRev = forecast.reduce((s, m) => s + m.revenue, 0);
   const totalEbitda = forecast.reduce((s, m) => s + m.ebitda, 0);
   const avgNCF = forecast.reduce((s, m) => s + m.netCashFlow, 0) / 12;
@@ -45,11 +45,22 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
+      {/* Data source indicator */}
+      {(!dataSources.hasAR || !dataSources.hasAP || !dataSources.hasGL) && (
+        <div className="flex items-center gap-2 p-2.5 border border-border rounded-lg bg-muted/30 text-xs text-muted-foreground">
+          <span className="font-medium">Data loaded:</span>
+          <span className={dataSources.hasAR ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/50"}>AR {dataSources.hasAR ? "✓" : "—"}</span>
+          <span className={dataSources.hasAP ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/50"}>AP {dataSources.hasAP ? "✓" : "—"}</span>
+          <span className={dataSources.hasGL ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/50"}>GL {dataSources.hasGL ? "✓" : "—"}</span>
+          <span className="ml-1 text-muted-foreground/60">| Missing data uses industry defaults</span>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Executive Dashboard</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            12-month financial overview &middot; {ar.invoiceCount} invoices &middot; {ap.billCount} bills analyzed
+            12-month financial overview{dataSources.hasAR ? ` · ${ar.invoiceCount} invoices` : ""}{dataSources.hasAP ? ` · ${ap.billCount} bills` : ""}{dataSources.hasGL ? " · GL imported" : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">

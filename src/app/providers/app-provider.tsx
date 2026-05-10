@@ -9,9 +9,6 @@ import {
   parseGLData,
   runFullAnalysis,
   getSampleData,
-  analyzeAR,
-  analyzeAP,
-  analyzeGL,
 } from "@/lib/financial-engine";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -46,12 +43,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (customAssumptions: Partial<Assumptions>) => {
       setState((prev) => {
         const newState = { ...prev, customAssumptions };
-        // If we have files, re-run analysis with new assumptions
-        if (prev.files.ar && prev.files.ap && prev.files.gl) {
+        if (prev.files.ar || prev.files.ap || prev.files.gl) {
           try {
-            const arRecords = parseARData(prev.files.ar);
-            const apRecords = parseAPData(prev.files.ap);
-            const glRecords = parseGLData(prev.files.gl);
+            const arRecords = prev.files.ar && prev.files.ar !== "demo" ? parseARData(prev.files.ar) : null;
+            const apRecords = prev.files.ap && prev.files.ap !== "demo" ? parseAPData(prev.files.ap) : null;
+            const glRecords = prev.files.gl && prev.files.gl !== "demo" ? parseGLData(prev.files.gl) : null;
             const analysis = runFullAnalysis(arRecords, apRecords, glRecords, customAssumptions);
             return { ...newState, analysis, error: null };
           } catch (e) {
@@ -65,14 +61,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const runAnalysis = useCallback(
-    (ar: string, ap: string, gl: string, customAssumptions?: Partial<Assumptions>) => {
+    (ar: string | null, ap: string | null, gl: string | null, customAssumptions?: Partial<Assumptions>) => {
       setState((prev) => ({ ...prev, isLoading: true, error: null, files: { ar, ap, gl } }));
-      // Use setTimeout to allow UI to update
       setTimeout(() => {
         try {
-          const arRecords = parseARData(ar);
-          const apRecords = parseAPData(ap);
-          const glRecords = parseGLData(gl);
+          const arRecords = ar ? parseARData(ar) : null;
+          const apRecords = ap ? parseAPData(ap) : null;
+          const glRecords = gl ? parseGLData(gl) : null;
           const analysis = runFullAnalysis(
             arRecords,
             apRecords,
@@ -97,9 +92,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => {
       try {
         const { ar, ap, gl } = getSampleData();
-        const arAnalysis = analyzeAR(ar);
-        const apAnalysis = analyzeAP(ap);
-        const glAnalysis = analyzeGL(gl);
         const analysis = runFullAnalysis(ar, ap, gl);
         setState((prev) => ({
           ...prev,
