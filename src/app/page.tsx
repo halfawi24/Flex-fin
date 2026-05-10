@@ -3,15 +3,14 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/lib/store";
-import { Upload, FileText, Play, CheckCircle2, AlertCircle, X, Info, FileSpreadsheet } from "lucide-react";
-import { parseFile, detectFileType, normalizeGLData, normalizeAPAgingData, parsedFileToCSV, type ParsedFile } from "@/lib/file-parser";
+import { Upload, FileText, Play, CheckCircle2, AlertCircle, X, Info } from "lucide-react";
 
 type FileType = "ar" | "ap" | "gl";
 
 interface FileState {
   file: File | null;
   content: string | null;
-  status: "empty" | "loaded" | "error";
+  status: "empty" | "loaded" | "error" | "parsing";
   error?: string;
   preview?: { headers: string[]; rowCount: number };
 }
@@ -44,33 +43,66 @@ export default function UploadPage() {
   });
 
   const handleFile = useCallback(async (type: FileType, file: File) => {
+    // Show parsing state
+    setFiles((prev) => ({
+      ...prev,
+      [type]: { file, content: null, status: "parsing" as const },
+    }));
+
     try {
-      let parsed: ParsedFile = await parseFile(file);
+      const ext = file.name.toLowerCase().split(".").pop() || "";
+      let csvText: string;
+      let headers: string[];
+      let rowCount: number;
 
-      if (type === "gl") {
-        parsed = normalizeGLData(parsed);
-      } else if (type === "ap") {
-        const detected = detectFileType(parsed.headers);
-        if (detected === "ap") {
-          parsed = normalizeAPAgingData(parsed);
+      if (ext === "xlsx" || ext === "xls" || ext === "xlsm") {
+        // Excel files → parse server-side via API
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("type", type);
+
+        const response = await fetch("/api/parse-file", {
+          method: "POST",
+          body: formData,
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || result.error) {
+          throw new Error(result.error || "فشل في تحليل الملف");
         }
-      }
 
-      const csvText = parsedFileToCSV(parsed);
+        csvText = result.csvText;
+        headers = result.headers;
+        rowCount = result.rowCount;
+      } else {
+        // CSV/TSV files → parse client-side (simple text parsing)
+        const text = await file.text();
+        const lines = text.split(/\r?\n/).filter((l) => l.trim());
+        if (lines.length < 2) throw new Error("الملف يجب أن يحتوي على صف عناوين وصف بيانات واحد على الأقل");
+
+        let sep = ",";
+        if (lines[0].includes("\t") && !lines[0].includes(",")) sep = "\t";
+        else if (lines[0].includes(";") && !lines[0].includes(",")) sep = ";";
+
+        headers = lines[0].split(sep).map((h) => h.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+        rowCount = lines.length - 1;
+        csvText = text;
+      }
 
       setFiles((prev) => ({
         ...prev,
         [type]: {
           file,
           content: csvText,
-          status: "loaded",
-          preview: { headers: parsed.headers, rowCount: parsed.rowCount },
+          status: "loaded" as const,
+          preview: { headers, rowCount },
         },
       }));
     } catch (e) {
       setFiles((prev) => ({
         ...prev,
-        [type]: { file: null, content: null, status: "error", error: (e as Error).message },
+        [type]: { file: null, content: null, status: "error" as const, error: (e as Error).message },
       }));
     }
   }, []);
@@ -97,6 +129,7 @@ export default function UploadPage() {
   }, []);
 
   const loadedCount = [files.ar, files.ap, files.gl].filter((f) => f.status === "loaded").length;
+  const parsingCount = [files.ar, files.ap, files.gl].filter((f) => f.status === "parsing").length;
   const hasAnyFile = loadedCount > 0;
 
   const handleAnalyze = useCallback(() => {
@@ -149,6 +182,8 @@ export default function UploadPage() {
                     ? "border-primary/40 bg-primary/5"
                     : fileState.status === "error"
                     ? "border-destructive/40 bg-destructive/5"
+                    : fileState.status === "parsing"
+                    ? "border-amber-500/40 bg-amber-500/5"
                     : "border-border hover:border-primary/30"
                 }`}
                 onDragOver={(e) => e.preventDefault()}
@@ -168,6 +203,8 @@ export default function UploadPage() {
                     className={`w-9 h-9 rounded-md flex items-center justify-center shrink-0 ${
                       fileState.status === "loaded"
                         ? "bg-primary/20"
+                        : fileState.status === "parsing"
+                        ? "bg-amber-500/20"
                         : "bg-muted"
                     }`}
                   >
@@ -175,6 +212,8 @@ export default function UploadPage() {
                       <CheckCircle2 className="w-4 h-4 text-primary" />
                     ) : fileState.status === "error" ? (
                       <AlertCircle className="w-4 h-4 text-destructive" />
+                    ) : fileState.status === "parsing" ? (
+                      <div className="w-4 h-4 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
                     ) : (
                       <FileText className="w-4 h-4 text-muted-foreground" />
                     )}
@@ -196,6 +235,11 @@ export default function UploadPage() {
                       {fileState.preview.headers.slice(0, 4).join(", ")}
                       {fileState.preview.headers.length > 4 && "..."}
                     </p>
+                  </div>
+                ) : fileState.status === "parsing" ? (
+                  <div className="text-xs text-amber-600 dark:text-amber-400">
+                    <p>جارٍ قراءة الملف...</p>
+                    <p className="text-muted-foreground mt-0.5">{fileState.file?.name}</p>
                   </div>
                 ) : fileState.status === "error" ? (
                   <p className="text-xs text-destructive">{fileState.error}</p>
@@ -240,9 +284,9 @@ export default function UploadPage() {
         <div className="max-w-5xl mx-auto text-center">
           <button
             onClick={handleAnalyze}
-            disabled={!hasAnyFile || state.isLoading}
+            disabled={!hasAnyFile || state.isLoading || parsingCount > 0}
             className={`inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium rounded-md transition-all ${
-              hasAnyFile
+              hasAnyFile && parsingCount === 0
                 ? "bg-primary text-primary-foreground hover:opacity-90 shadow-md"
                 : "bg-muted text-muted-foreground cursor-not-allowed"
             }`}
@@ -251,6 +295,11 @@ export default function UploadPage() {
               <>
                 <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
                 جارٍ التحليل...
+              </>
+            ) : parsingCount > 0 ? (
+              <>
+                <div className="w-4 h-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
+                جارٍ قراءة الملفات...
               </>
             ) : (
               <>
