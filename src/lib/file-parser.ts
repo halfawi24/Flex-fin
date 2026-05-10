@@ -29,18 +29,33 @@ export async function parseFile(file: File): Promise<ParsedFile> {
 }
 
 /**
- * Parse Excel file using SheetJS
+ * Parse Excel file using SheetJS (dynamically imported to avoid bundling issues)
  */
 async function parseExcelFile(file: File): Promise<ParsedFile> {
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await file.arrayBuffer();
+  } catch (e) {
+    throw new Error("تعذر قراءة الملف. تأكد من أن الملف صالح.");
+  }
 
-  // Use first sheet (skip filter/metadata sheets)
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(new Uint8Array(buffer), { type: "array", cellDates: true, codepage: 65001 });
+  } catch (e) {
+    throw new Error(`تعذر فتح ملف Excel: ${(e as Error).message || "تنسيق غير مدعوم"}`);
+  }
+
+  if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+    throw new Error("ملف Excel فارغ — لا توجد أوراق عمل.");
+  }
+
+  // Find the main data sheet (skip filter/metadata sheets with very few rows)
   let sheetName = workbook.SheetNames[0];
-  // Try to find the main data sheet (skip sheets with very few rows)
   for (const name of workbook.SheetNames) {
     const ws = workbook.Sheets[name];
-    const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+    if (!ws || !ws["!ref"]) continue;
+    const range = XLSX.utils.decode_range(ws["!ref"]);
     const rowCount = range.e.r - range.s.r;
     if (rowCount > 3) {
       sheetName = name;
@@ -49,56 +64,83 @@ async function parseExcelFile(file: File): Promise<ParsedFile> {
   }
 
   const ws = workbook.Sheets[sheetName];
+  if (!ws || !ws["!ref"]) {
+    throw new Error(`ورقة العمل "${sheetName}" فارغة.`);
+  }
 
-  // Find the header row (first row with multiple values)
-  const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
-  let headerRow = 0;
+  // Convert entire sheet to array of arrays
+  let jsonData: (string | number | undefined)[][];
+  try {
+    jsonData = XLSX.utils.sheet_to_json(ws, {
+      header: 1,
+      raw: false,
+      dateNF: "yyyy-mm-dd",
+      defval: "",
+    }) as (string | number | undefined)[][];
+  } catch (e) {
+    throw new Error("تعذر قراءة بيانات ورقة العمل.");
+  }
 
-  for (let r = range.s.r; r <= Math.min(range.e.r, 5); r++) {
-    let cellCount = 0;
-    for (let c = range.s.c; c <= range.e.c; c++) {
-      const cell = ws[XLSX.utils.encode_cell({ r, c })];
-      if (cell && cell.v !== undefined && cell.v !== null && cell.v !== "") {
-        cellCount++;
-      }
-    }
-    if (cellCount >= 3) {
+  if (!jsonData || jsonData.length < 2) {
+    throw new Error("الملف لا يحتوي على بيانات كافية (يجب أن يكون هناك صف عناوين وصف بيانات واحد على الأقل).");
+  }
+
+  // Find header row — first row with 3+ non-empty cells
+  let headerRow = -1;
+  for (let r = 0; r < Math.min(jsonData.length, 10); r++) {
+    const row = jsonData[r];
+    if (!Array.isArray(row)) continue;
+    const nonEmpty = row.filter(v => v !== undefined && v !== null && String(v).trim() !== "").length;
+    if (nonEmpty >= 3) {
       headerRow = r;
       break;
     }
   }
 
-  // Extract using the detected header row
-  const jsonData = XLSX.utils.sheet_to_json(ws, {
-    header: 1,
-    raw: false,
-    dateNF: "yyyy-mm-dd",
-  }) as (string | number | undefined)[][];
-
-  if (!jsonData || jsonData.length < 2) {
-    throw new Error("Excel file has no data rows");
+  if (headerRow === -1) {
+    throw new Error("لم يتم العثور على صف العناوين. تأكد من أن الملف يحتوي على صف عناوين واضح.");
   }
 
-  // Get headers from detected header row
-  const rawHeaders = (jsonData[headerRow] || []) as string[];
-  const headers = rawHeaders.map((h) => String(h || "").trim()).filter(Boolean);
+  // Extract headers
+  const rawHeaders = jsonData[headerRow] || [];
+  const headers: string[] = [];
+  const headerIndices: number[] = [];
+
+  for (let i = 0; i < rawHeaders.length; i++) {
+    const h = String(rawHeaders[i] || "").trim();
+    if (h) {
+      headers.push(h);
+      headerIndices.push(i);
+    }
+  }
 
   if (headers.length === 0) {
-    throw new Error("Could not detect column headers in Excel file");
+    throw new Error("لم يتم العثور على أعمدة في صف العناوين.");
   }
 
-  // Parse data rows
+  // Parse data rows using the header indices for correct column mapping
   const rows: Record<string, string>[] = [];
   for (let i = headerRow + 1; i < jsonData.length; i++) {
-    const rowData = jsonData[i] as (string | number | undefined)[];
-    if (!rowData || rowData.every((v) => !v && v !== 0)) continue; // skip empty rows
+    const rowData = jsonData[i];
+    if (!Array.isArray(rowData)) continue;
+
+    // Check if row has any data
+    const hasData = rowData.some((v, idx) =>
+      headerIndices.includes(idx) && v !== undefined && v !== null && String(v).trim() !== ""
+    );
+    if (!hasData) continue;
 
     const row: Record<string, string> = {};
-    headers.forEach((h, idx) => {
-      const val = rowData[idx];
-      row[h] = val !== undefined && val !== null ? String(val) : "";
+    headers.forEach((h, hIdx) => {
+      const colIdx = headerIndices[hIdx];
+      const val = rowData[colIdx];
+      row[h] = val !== undefined && val !== null ? String(val).trim() : "";
     });
     rows.push(row);
+  }
+
+  if (rows.length === 0) {
+    throw new Error("الملف لا يحتوي على صفوف بيانات بعد العناوين.");
   }
 
   return {
@@ -114,7 +156,7 @@ async function parseExcelFile(file: File): Promise<ParsedFile> {
  */
 function parseCSVText(text: string, fileName: string): ParsedFile {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
-  if (lines.length < 2) throw new Error("File must have at least a header and one data row");
+  if (lines.length < 2) throw new Error("الملف يجب أن يحتوي على صف عناوين وصف بيانات واحد على الأقل.");
 
   // Detect separator
   const firstLine = lines[0];
@@ -124,7 +166,13 @@ function parseCSVText(text: string, fileName: string): ParsedFile {
 
   const headers = lines[0]
     .split(sep)
-    .map((h) => h.trim().replace(/^["']|["']$/g, ""));
+    .map((h) => h.trim().replace(/^["']|["']$/g, ""))
+    .filter(Boolean);
+
+  if (headers.length === 0) {
+    throw new Error("لم يتم العثور على أعمدة في صف العناوين.");
+  }
+
   const rows: Record<string, string>[] = [];
 
   for (let i = 1; i < lines.length; i++) {
@@ -137,23 +185,26 @@ function parseCSVText(text: string, fileName: string): ParsedFile {
     rows.push(row);
   }
 
+  if (rows.length === 0) {
+    throw new Error("الملف لا يحتوي على صفوف بيانات.");
+  }
+
   return { headers, rows, fileName, rowCount: rows.length };
 }
 
 // ============ ARABIC & MULTILINGUAL COLUMN DETECTION ============
 
-// Arabic column name mappings
 const ARABIC_MAPPINGS: Record<string, string[]> = {
   // AR columns
   invoice_date: ["تاريخ الفاتورة", "التاريخ", "تاريخ", "Date", "Invoice_Date"],
-  invoice_amount: ["المبلغ", "مبلغ الفاتورة", "القيمة", "إجمالي", "Amount", "Invoice_Amount", "Total"],
+  invoice_amount: ["المبلغ", "مبلغ الفاتورة", "القيمة", "إجمالي", "الإجمالي", "Amount", "Invoice_Amount", "Total"],
   paid_date: ["تاريخ الدفع", "تاريخ السداد", "Paid_Date", "Payment_Date"],
   invoice_id: ["رقم الفاتورة", "رمز الفاتورة", "Invoice_ID", "ID"],
   customer: ["العميل", "اسم العميل", "الشريك", "Customer", "Client"],
 
   // AP columns
   bill_date: ["تاريخ الفاتورة", "التاريخ", "تاريخ", "Date", "Bill_Date"],
-  bill_amount: ["المبلغ", "مبلغ الفاتورة", "القيمة", "إجمالي", "Amount", "Bill_Amount", "Total"],
+  bill_amount: ["المبلغ", "مبلغ الفاتورة", "القيمة", "إجمالي", "الإجمالي", "Amount", "Bill_Amount", "Total"],
   payment_date: ["تاريخ الدفع", "تاريخ السداد", "Payment_Date", "Paid_Date"],
   vendor: ["المورد", "اسم المورد", "الشريك", "الحساب", "Vendor", "Supplier"],
 
@@ -181,20 +232,17 @@ const ARABIC_MAPPINGS: Record<string, string[]> = {
  */
 export function detectColumnMultilingual(headers: string[], fieldName: string): string | null {
   const patterns = ARABIC_MAPPINGS[fieldName] || [];
-  // Also include standard English detection from financial-engine
-  const allPatterns = [...patterns];
 
-  // Exact match
-  for (const pattern of allPatterns) {
+  // Exact match first
+  for (const pattern of patterns) {
     const match = headers.find((h) => h.trim() === pattern.trim());
     if (match) return match;
   }
 
-  // Partial/fuzzy match
-  for (const pattern of allPatterns) {
+  // Partial/contains match
+  for (const pattern of patterns) {
     const match = headers.find((h) =>
-      h.toLowerCase().includes(pattern.toLowerCase()) ||
-      pattern.toLowerCase().includes(h.toLowerCase())
+      h.includes(pattern) || pattern.includes(h)
     );
     if (match) return match;
   }
@@ -206,24 +254,21 @@ export function detectColumnMultilingual(headers: string[], fieldName: string): 
  * Determine file type (AR, AP, or GL) from headers
  */
 export function detectFileType(headers: string[]): "ar" | "ap" | "gl" | "unknown" {
-  const headerStr = headers.join(" ").toLowerCase();
-  const hasArabic = /[\u0600-\u06FF]/.test(headerStr);
+  const headerStr = headers.join(" ");
 
-  // GL indicators
-  const glIndicators = ["المدين", "الدائن", "الرصيد", "debit", "credit", "balance", "رمز", "account", "gl_account"];
-  if (glIndicators.some((ind) => headerStr.includes(ind.toLowerCase()))) return "gl";
+  // GL indicators (Debit/Credit columns are definitive)
+  const glIndicators = ["المدين", "الدائن", "الرصيد", "Debit", "Credit", "Balance"];
+  if (glIndicators.some((ind) => headers.some(h => h.includes(ind)))) return "gl";
 
   // AP aging indicators
-  const apAgingIndicators = ["1-30", "31-60", "61-90", "91-120", "أقدم", "حسابات دائنة", "payable"];
-  if (apAgingIndicators.some((ind) => headerStr.includes(ind.toLowerCase()))) return "ap";
+  const apAgingIndicators = ["1-30", "31-60", "61-90", "91-120"];
+  if (apAgingIndicators.some((ind) => headers.some(h => h === ind))) return "ap";
 
   // AR indicators
-  const arIndicators = ["invoice", "فاتورة", "receivable", "حسابات مدينة"];
-  if (arIndicators.some((ind) => headerStr.includes(ind.toLowerCase()))) return "ar";
+  if (headers.some(h => h.toLowerCase().includes("invoice") || h.includes("فاتورة"))) return "ar";
 
   // AP indicators
-  const apIndicators = ["bill", "vendor", "supplier", "مورد", "payable"];
-  if (apIndicators.some((ind) => headerStr.includes(ind.toLowerCase()))) return "ap";
+  if (headers.some(h => h.toLowerCase().includes("bill") || h.includes("مورد") || h.includes("payable"))) return "ap";
 
   return "unknown";
 }
@@ -234,30 +279,41 @@ export function detectFileType(headers: string[]): "ar" | "ap" | "gl" | "unknown
 export function normalizeGLData(parsed: ParsedFile): ParsedFile {
   const debitCol = detectColumnMultilingual(parsed.headers, "debit");
   const creditCol = detectColumnMultilingual(parsed.headers, "credit");
-  const balanceCol = detectColumnMultilingual(parsed.headers, "balance");
   const accountCol = detectColumnMultilingual(parsed.headers, "account_code");
   const nameCol = detectColumnMultilingual(parsed.headers, "account_name");
 
-  // If we have debit/credit but no Amount, compute net amount
-  if ((debitCol || creditCol) && !parsed.headers.includes("Amount")) {
-    const newHeaders = [...parsed.headers, "Amount", "Description"];
-    const newRows = parsed.rows.map((row) => {
-      const debit = parseFloat(String(row[debitCol || ""] || "0").replace(/,/g, "")) || 0;
-      const credit = parseFloat(String(row[creditCol || ""] || "0").replace(/,/g, "")) || 0;
-      const net = debit - credit; // Positive = debit (asset/expense), Negative = credit (revenue/liability)
+  // If we have debit/credit columns, compute net amount for each row
+  if (debitCol || creditCol) {
+    const outputHeaders = ["Account", "Amount", "Description"];
+    const outputRows = parsed.rows
+      .filter(row => {
+        // Must have an account code
+        const acct = accountCol ? row[accountCol] : "";
+        return acct && acct.trim().length > 0;
+      })
+      .map((row) => {
+        const debitStr = String(row[debitCol || ""] || "0").replace(/,/g, "").trim();
+        const creditStr = String(row[creditCol || ""] || "0").replace(/,/g, "").trim();
+        const debit = parseFloat(debitStr) || 0;
+        const credit = parseFloat(creditStr) || 0;
+        const net = debit - credit;
 
-      // Use account name as description if available
-      const desc = nameCol ? row[nameCol] || "" : "";
-      const acct = accountCol ? row[accountCol] || "" : "";
+        const desc = nameCol ? (row[nameCol] || "").trim() : "";
+        const acct = accountCol ? (row[accountCol] || "").trim() : "";
 
-      return {
-        ...row,
-        Amount: String(net),
-        Description: desc,
-        Account: acct || row["Account"] || "",
-      };
-    });
-    return { ...parsed, headers: newHeaders, rows: newRows };
+        return {
+          Account: acct,
+          Amount: String(net),
+          Description: desc,
+        };
+      });
+
+    return {
+      headers: outputHeaders,
+      rows: outputRows,
+      fileName: parsed.fileName,
+      rowCount: outputRows.length,
+    };
   }
 
   return parsed;
@@ -265,52 +321,50 @@ export function normalizeGLData(parsed: ParsedFile): ParsedFile {
 
 /**
  * Convert AP aging report to standard AP format.
- * Handles comma-formatted amounts (e.g., "5,750.00") and skips total/summary rows.
+ * Handles comma-formatted amounts and skips total/summary rows.
  */
 export function normalizeAPAgingData(parsed: ParsedFile): ParsedFile {
-  // AP aging has vendor names as rows with aging bucket amounts
   const col1_30 = detectColumnMultilingual(parsed.headers, "aging_1_30");
   const col31_60 = detectColumnMultilingual(parsed.headers, "aging_31_60");
   const col61_90 = detectColumnMultilingual(parsed.headers, "aging_61_90");
   const col91_120 = detectColumnMultilingual(parsed.headers, "aging_91_120");
   const colOlder = detectColumnMultilingual(parsed.headers, "aging_older");
 
-  // Known total/summary row labels to skip
+  // Total/summary row labels to skip
   const totalLabels = [
-    "حسابات دائنة مستحقة متأخرة",
-    "حسابات مدينة مستحقة متأخرة",
+    "حسابات دائنة مستحقة",
+    "حسابات مدينة مستحقة",
     "الإجمالي",
     "total",
     "المجموع",
+    "الكل",
   ];
 
-  // If this looks like an aging report, convert to standard AP format
-  if (col1_30 || col31_60 || col61_90) {
+  if (col1_30 || col31_60 || col61_90 || col91_120) {
     const newRows: Record<string, string>[] = [];
     const today = new Date();
 
     parsed.rows.forEach((row) => {
-      // Get vendor name (first text column)
+      // Find vendor name — first column with text that isn't a number
       let vendor = "";
       for (const h of parsed.headers) {
-        const val = row[h];
-        if (val && val.trim().length > 2) {
-          // Check if it's a number (skip numeric columns)
-          const cleanVal = val.replace(/,/g, "").trim();
-          if (!isNaN(parseFloat(cleanVal)) && cleanVal.match(/^\d/)) continue;
-          vendor = val.trim();
-          break;
-        }
+        const val = (row[h] || "").trim();
+        if (!val || val.length < 2) continue;
+        // Skip if it looks like a number (even with commas)
+        const cleaned = val.replace(/,/g, "");
+        if (/^\d+\.?\d*$/.test(cleaned)) continue;
+        // Skip date-looking values
+        if (/^\d{4}-\d{2}/.test(val) || /^\d{2}\/\d{2}/.test(val)) continue;
+        vendor = val;
+        break;
       }
       if (!vendor) return;
 
       // Skip total/summary rows
-      const isTotal = totalLabels.some((label) =>
-        vendor.includes(label) || vendor.toLowerCase().includes("total")
-      );
+      const isTotal = totalLabels.some((label) => vendor.includes(label));
       if (isTotal) return;
 
-      // Create individual AP records from aging buckets
+      // Extract amounts from aging buckets
       const buckets = [
         { col: col1_30, daysBack: 15 },
         { col: col31_60, daysBack: 45 },
@@ -321,7 +375,6 @@ export function normalizeAPAgingData(parsed: ParsedFile): ParsedFile {
 
       buckets.forEach(({ col, daysBack }) => {
         if (!col) return;
-        // Handle comma-formatted amounts like "5,750.00"
         const rawVal = String(row[col] || "").replace(/,/g, "").trim();
         const amt = parseFloat(rawVal) || 0;
         if (amt > 0) {
@@ -329,19 +382,21 @@ export function normalizeAPAgingData(parsed: ParsedFile): ParsedFile {
           newRows.push({
             Bill_Date: billDate.toISOString().split("T")[0],
             Bill_Amount: String(amt),
-            Payment_Date: "", // Unpaid — that's why it's in aging
+            Payment_Date: "",
             Vendor: vendor,
           });
         }
       });
     });
 
-    return {
-      headers: ["Bill_Date", "Bill_Amount", "Payment_Date", "Vendor"],
-      rows: newRows,
-      fileName: parsed.fileName,
-      rowCount: newRows.length,
-    };
+    if (newRows.length > 0) {
+      return {
+        headers: ["Bill_Date", "Bill_Amount", "Payment_Date", "Vendor"],
+        rows: newRows,
+        fileName: parsed.fileName,
+        rowCount: newRows.length,
+      };
+    }
   }
 
   return parsed;
@@ -355,7 +410,6 @@ export function parsedFileToCSV(parsed: ParsedFile): string {
   parsed.rows.forEach((row) => {
     const vals = parsed.headers.map((h) => {
       const v = row[h] || "";
-      // Quote if contains comma
       return v.includes(",") ? `"${v}"` : v;
     });
     lines.push(vals.join(","));
