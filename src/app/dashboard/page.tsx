@@ -32,6 +32,7 @@ export default function DashboardPage() {
   }
 
   const { forecast, ar, ap, funding, ccc, assumptions, gl, scenarios, dataSources } = state.analysis;
+  const isPreRevenue = gl.isPreRevenue && assumptions.m1Revenue === 0;
   const totalRev = forecast.reduce((s, m) => s + m.revenue, 0);
   const totalEbitda = forecast.reduce((s, m) => s + m.ebitda, 0);
   const avgNCF = forecast.reduce((s, m) => s + m.netCashFlow, 0) / 12;
@@ -77,57 +78,103 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3">
-        <KPICard label="الرصيد الافتتاحي" value={formatCurrency(startingCash)} icon={DollarSign} />
-        <KPICard
-          label="الرصيد (شهر 12)"
-          value={formatCurrency(endingCash)}
-          trend={cashChange > 0 ? "up" : "down"}
-          subValue={`${cashChange > 0 ? "+" : ""}${formatCurrency(cashChange)}`}
-          icon={DollarSign}
-          highlight
-        />
-        <KPICard
-          label="إيرادات 12 شهر"
-          value={formatCurrency(totalRev)}
-          subValue={`نمو: ${formatPercent(assumptions.growthRate)}/شهر`}
-          icon={TrendingUp}
-        />
-        <KPICard
-          label="أرباح تشغيلية 12 شهر"
-          value={formatCurrency(totalEbitda)}
-          subValue={`هامش: ${formatPercent(totalEbitda / totalRev)}`}
-          icon={BarChart3}
-        />
-        <KPICard
-          label="دورة التحويل النقدي"
-          value={formatDays(ccc)}
-          subValue={`تحصيل ${ar.dso.toFixed(0)}ي | سداد ${ap.dpo.toFixed(0)}ي`}
-          trend={ccc < 30 ? "up" : ccc > 60 ? "down" : "neutral"}
-          icon={Clock}
-        />
-        <KPICard
-          label="نسبة تغطية الدين"
-          value={`${funding.dscr.toFixed(2)}x`}
-          subValue={funding.dscr >= 1.5 ? "قدرة صحية" : "محدودة"}
-          trend={funding.dscr >= 1.5 ? "up" : "down"}
-          icon={Shield}
-        />
-        <KPICard
-          label="هامش الربح الإجمالي"
-          value={formatPercent(grossMargin)}
-          subValue={`تكلفة المبيعات: ${formatPercent(assumptions.cogsPct)}`}
-          icon={Wallet}
-        />
-        <KPICard
-          label="المدرج النقدي"
-          value={cashRunway >= 999 ? "∞" : `${cashRunway.toFixed(0)} شهر`}
-          subValue={monthlyBurn > 0 ? `حرق: ${formatCurrency(monthlyBurn)}/شهر` : "تدفق نقدي إيجابي"}
-          trend={cashRunway >= 12 || cashRunway >= 999 ? "up" : "down"}
-          icon={Clock}
-        />
-      </div>
+      {/* KPI Grid — adapts to pre-revenue vs revenue company */}
+      {isPreRevenue ? (
+        <>
+          {/* Pre-revenue: Balance Sheet KPIs */}
+          <div className="p-3 border border-amber-500/30 bg-amber-500/5 rounded-lg text-xs text-amber-700 dark:text-amber-400">
+            شركة في مرحلة التطوير — لا توجد إيرادات حالية. يعرض التحليل الوضع المالي الفعلي من دفتر الأستاذ.
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KPICard label="إجمالي الأصول" value={formatCurrency(gl.totalAssets)} icon={TrendingUp} highlight />
+            <KPICard label="إجمالي الالتزامات" value={formatCurrency(gl.totalLiabilities)} icon={Shield} />
+            <KPICard label="حقوق الملكية" value={formatCurrency(gl.totalEquity)} icon={Wallet} />
+            <KPICard
+              label="الرصيد النقدي"
+              value={formatCurrency(gl.cashBalance)}
+              trend={gl.cashBalance > 0 ? "up" : "down"}
+              icon={DollarSign}
+            />
+            <KPICard
+              label="المصاريف الجارية"
+              value={formatCurrency(gl.opex + gl.cogs)}
+              subValue="مصاريف تشغيلية + تكاليف"
+              icon={BarChart3}
+            />
+            <KPICard
+              label="الذمم الدائنة"
+              value={formatCurrency(ap.totalAP)}
+              subValue={`${ap.billCount} فاتورة مستحقة`}
+              icon={Clock}
+            />
+            <KPICard
+              label="نسبة الدين/الملكية"
+              value={gl.totalEquity > 0 ? `${((gl.totalLiabilities / gl.totalEquity) * 100).toFixed(0)}%` : "—"}
+              subValue={gl.totalLiabilities > gl.totalEquity * 0.5 ? "مرتفعة" : "مقبولة"}
+              trend={gl.totalLiabilities > gl.totalEquity * 0.5 ? "down" : "up"}
+              icon={Shield}
+            />
+            <KPICard
+              label="الإيرادات"
+              value="$0"
+              subValue="مرحلة ما قبل الإيرادات"
+              trend="neutral"
+              icon={TrendingUp}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3">
+          <KPICard label="الرصيد الافتتاحي" value={formatCurrency(startingCash)} icon={DollarSign} />
+          <KPICard
+            label="الرصيد (شهر 12)"
+            value={formatCurrency(endingCash)}
+            trend={cashChange > 0 ? "up" : "down"}
+            subValue={`${cashChange > 0 ? "+" : ""}${formatCurrency(cashChange)}`}
+            icon={DollarSign}
+            highlight
+          />
+          <KPICard
+            label="إيرادات 12 شهر"
+            value={formatCurrency(totalRev)}
+            subValue={`نمو: ${formatPercent(assumptions.growthRate)}/شهر`}
+            icon={TrendingUp}
+          />
+          <KPICard
+            label="أرباح تشغيلية 12 شهر"
+            value={formatCurrency(totalEbitda)}
+            subValue={`هامش: ${formatPercent(totalEbitda / totalRev)}`}
+            icon={BarChart3}
+          />
+          <KPICard
+            label="دورة التحويل النقدي"
+            value={formatDays(ccc)}
+            subValue={`تحصيل ${ar.dso.toFixed(0)}ي | سداد ${ap.dpo.toFixed(0)}ي`}
+            trend={ccc < 30 ? "up" : ccc > 60 ? "down" : "neutral"}
+            icon={Clock}
+          />
+          <KPICard
+            label="نسبة تغطية الدين"
+            value={`${funding.dscr.toFixed(2)}x`}
+            subValue={funding.dscr >= 1.5 ? "قدرة صحية" : "محدودة"}
+            trend={funding.dscr >= 1.5 ? "up" : "down"}
+            icon={Shield}
+          />
+          <KPICard
+            label="هامش الربح الإجمالي"
+            value={formatPercent(grossMargin)}
+            subValue={`تكلفة المبيعات: ${formatPercent(assumptions.cogsPct)}`}
+            icon={Wallet}
+          />
+          <KPICard
+            label="المدرج النقدي"
+            value={cashRunway >= 999 ? "∞" : `${cashRunway.toFixed(0)} شهر`}
+            subValue={monthlyBurn > 0 ? `حرق: ${formatCurrency(monthlyBurn)}/شهر` : "تدفق نقدي إيجابي"}
+            trend={cashRunway >= 12 || cashRunway >= 999 ? "up" : "down"}
+            icon={Clock}
+          />
+        </div>
+      )}
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

@@ -56,6 +56,14 @@ export interface GLAnalysis {
   grossProfit: number;
   ebitda: number;
   opexBreakdown: Record<string, number>;
+  // Balance sheet data (from 1xx/2xx/3xx accounts)
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  cashBalance: number;
+  isPreRevenue: boolean;
+  assetBreakdown: Record<string, number>;
+  liabilityBreakdown: Record<string, number>;
 }
 
 export interface Assumptions {
@@ -451,6 +459,37 @@ export function analyzeGL(records: GLRecord[]): GLAnalysis {
     // We skip assets/liabilities/equity for P&L analysis
   });
 
+  // Balance sheet analysis
+  let totalAssets = 0;
+  let totalLiabilities = 0;
+  let totalEquity = 0;
+  let cashBalance = 0;
+  const assetBreakdown: Record<string, number> = {};
+  const liabilityBreakdown: Record<string, number> = {};
+
+  records.forEach(r => {
+    const acct = r.account.toString().trim();
+    const desc = r.description || `Account ${acct}`;
+    const classification = classifyAccount(acct);
+
+    if (classification === 'asset') {
+      totalAssets += r.amount;
+      assetBreakdown[desc] = (assetBreakdown[desc] || 0) + r.amount;
+      // Detect cash accounts (bank, cash)
+      const descLower = desc.toLowerCase();
+      if (descLower.includes('bank') || descLower.includes('cash') || descLower.includes('بنك') || descLower.includes('نقد')) {
+        cashBalance += r.amount;
+      }
+    } else if (classification === 'liability') {
+      totalLiabilities += Math.abs(r.amount);
+      liabilityBreakdown[desc] = (liabilityBreakdown[desc] || 0) + Math.abs(r.amount);
+    } else if (classification === 'equity') {
+      totalEquity += Math.abs(r.amount);
+    }
+  });
+
+  const isPreRevenue = revenue === 0;
+
   return {
     revenue,
     cogs,
@@ -458,6 +497,13 @@ export function analyzeGL(records: GLRecord[]): GLAnalysis {
     grossProfit: revenue - cogs,
     ebitda: revenue - cogs - opex,
     opexBreakdown,
+    totalAssets,
+    totalLiabilities,
+    totalEquity,
+    cashBalance,
+    isPreRevenue,
+    assetBreakdown,
+    liabilityBreakdown,
   };
 }
 
@@ -623,7 +669,7 @@ function emptyAP(): APAnalysis {
 }
 
 function emptyGL(): GLAnalysis {
-  return { revenue: 0, cogs: 0, opex: 0, grossProfit: 0, ebitda: 0, opexBreakdown: {} };
+  return { revenue: 0, cogs: 0, opex: 0, grossProfit: 0, ebitda: 0, opexBreakdown: {}, totalAssets: 0, totalLiabilities: 0, totalEquity: 0, cashBalance: 0, isPreRevenue: true, assetBreakdown: {}, liabilityBreakdown: {} };
 }
 
 // ============ FULL ANALYSIS ============
@@ -642,19 +688,23 @@ export function runFullAnalysis(
   const ap = hasAP ? analyzeAP(apRecords) : emptyAP();
   const gl = hasGL ? analyzeGL(glRecords) : emptyGL();
 
+  // For pre-revenue companies, use actual data only — no fabricated revenue
+  const isPreRevenue = gl.isPreRevenue && !hasAR;
+  const openingCash = gl.cashBalance > 0 ? gl.cashBalance : (hasGL ? 0 : 150000);
+
   const defaults: Assumptions = {
-    openingCash: 150000,
-    m1Revenue: gl.revenue > 0 ? gl.revenue : (hasAR ? ar.monthlyRevenueEst : 50000),
-    growthRate: 0.05,
-    cogsPct: gl.revenue > 0 ? gl.cogs / gl.revenue : 0.35,
-    monthlyOpex: gl.opex > 0 ? gl.opex : 25000,
-    monthlyCapex: 5000,
+    openingCash: openingCash,
+    m1Revenue: gl.revenue > 0 ? gl.revenue : (hasAR ? ar.monthlyRevenueEst : 0),
+    growthRate: gl.revenue > 0 ? 0.05 : 0,
+    cogsPct: gl.revenue > 0 ? gl.cogs / gl.revenue : 0,
+    monthlyOpex: gl.opex > 0 ? gl.opex : (hasGL ? 0 : 25000),
+    monthlyCapex: 0,
     taxRate: 0.21,
     arDays: hasAR ? ar.dso : 30,
     apDays: hasAP ? ap.dpo : 45,
-    locSize: 100000,
+    locSize: gl.totalLiabilities > 0 ? gl.totalLiabilities : 100000,
     locRate: 0.08,
-    loanAmount: 75000,
+    loanAmount: gl.totalLiabilities > 0 ? gl.totalLiabilities : 75000,
     loanTerm: 36,
     loanRate: 0.065,
     factoringFee: 0.03,
@@ -692,51 +742,97 @@ function generateExecutiveSummary(
   const startingCash = forecast[0].startingCash;
 
   const fmt = (n: number) => n.toLocaleString('en-US', {maximumFractionDigits: 0});
+  const isPreRevenue = gl.isPreRevenue && assumptions.m1Revenue === 0;
 
   let summary = `التحليل المالي التنفيذي\n`;
   summary += `تاريخ الإنشاء: ${new Date().toISOString().split('T')[0]}\n\n`;
   summary += `البيانات المستوردة\n`;
-  summary += `• الحسابات المدينة: ${ar.invoiceCount} فاتورة، إجمالي $${fmt(ar.totalAR)}\n`;
-  summary += `• الحسابات الدائنة: ${ap.billCount} فاتورة، إجمالي $${fmt(ap.totalAP)}\n`;
-  summary += `• دفتر الأستاذ العام: إيرادات $${fmt(gl.revenue)} | تكلفة مبيعات $${fmt(gl.cogs)} | مصاريف تشغيلية $${fmt(gl.opex)}\n\n`;
-  summary += `الملخص المالي\n`;
-  summary += `• إيرادات الشهر الأول: $${fmt(assumptions.m1Revenue)}\n`;
-  summary += `• معدل نمو الإيرادات: ${(assumptions.growthRate * 100).toFixed(1)}%\n`;
-  summary += `• إيرادات 12 شهر المتوقعة: $${fmt(totalRev)}\n`;
-  summary += `• الأرباح التشغيلية 12 شهر: $${fmt(totalEbitda)}\n`;
-  summary += `• هامش الأرباح التشغيلية: ${((totalEbitda / totalRev) * 100).toFixed(1)}%\n`;
-  summary += `• الرصيد الافتتاحي: $${fmt(startingCash)}\n`;
-  summary += `• الرصيد الختامي (شهر 12): $${fmt(endingCash)}\n`;
-  summary += `• التغير في الوضع النقدي: $${fmt(endingCash - startingCash)}\n\n`;
-  summary += `رأس المال العامل\n`;
-  summary += `• أيام التحصيل (DSO): ${ar.dso.toFixed(1)} يوم\n`;
-  summary += `• أيام السداد (DPO): ${ap.dpo.toFixed(1)} يوم\n`;
-  summary += `• دورة التحويل النقدي (CCC): ${ccc.toFixed(1)} يوم\n`;
-  summary += `• معدل التحصيل: ${(ar.collectionRate * 100).toFixed(1)}%\n\n`;
-  summary += `السيناريوهات\n`;
-  summary += `• الحالة الأساسية — رصيد شهر 12: $${fmt(scenarios.base.endingCashM12)}\n`;
-  summary += `• أفضل حالة — رصيد شهر 12: $${fmt(scenarios.best.endingCashM12)}\n`;
-  summary += `• أسوأ حالة — رصيد شهر 12: $${fmt(scenarios.worst.endingCashM12)}\n\n`;
-  summary += `الديون والتمويل\n`;
-  summary += `• نسبة تغطية خدمة الدين (DSCR): ${funding.dscr.toFixed(2)}x\n`;
-  summary += `• قسط القرض الشهري: $${fmt(funding.pmt)}\n`;
-  summary += `• التسهيل الائتماني المتاح: $${fmt(funding.locSize)}\n\n`;
+  if (dataSources?.hasAR) summary += `• الحسابات المدينة: ${ar.invoiceCount} فاتورة، إجمالي $${fmt(ar.totalAR)}\n`;
+  if (dataSources?.hasAP) summary += `• الحسابات الدائنة: ${ap.billCount} فاتورة، إجمالي $${fmt(ap.totalAP)}\n`;
+  if (dataSources?.hasGL) summary += `• دفتر الأستاذ العام: ${gl.isPreRevenue ? "شركة في مرحلة ما قبل الإيرادات" : `إيرادات $${fmt(gl.revenue)}`}\n`;
+  summary += `\n`;
 
-  summary += `التوصيات الرئيسية\n`;
-  if (ccc > 30) {
-    summary += `• [مرتفع] دورة التحويل النقدي ${ccc.toFixed(0)} يوم — يُنصح بتطبيق خصومات الدفع المبكر وتشديد شروط الائتمان\n`;
-  }
-  if (ar.dso > 45) {
-    summary += `• [مرتفع] أيام التحصيل ${ar.dso.toFixed(0)} يوم — يُنصح بتفعيل تذكيرات الدفع الآلية\n`;
-  }
-  if (funding.dscr < 1.5) {
-    summary += `• [متوسط] نسبة التغطية ${funding.dscr.toFixed(2)}x — قدرة محدودة على الاقتراض، التركيز على نمو الإيرادات\n`;
-  }
-  if (scenarios.worst.minCash < 0) {
-    summary += `• [حرج] السيناريو الأسوأ يُظهر رصيد سلبي — الحفاظ على التسهيل الائتماني وبناء احتياطيات\n`;
-  }
-  if (endingCash > startingCash * 1.5) {
-    summary += `• [فرصة] تراكم نقدي قوي — النظر في إعادة الاستثمار أو السداد المبكر للديون\n`;
+  if (isPreRevenue) {
+    // Pre-revenue company summary — show balance sheet and expenses
+    summary += `═══ شركة في مرحلة التطوير (ما قبل الإيرادات) ═══\n\n`;
+    summary += `الوضع المالي\n`;
+    summary += `• إجمالي الأصول: $${fmt(gl.totalAssets)}\n`;
+    summary += `• إجمالي الالتزامات: $${fmt(gl.totalLiabilities)}\n`;
+    summary += `• حقوق الملكية: $${fmt(gl.totalEquity)}\n`;
+    summary += `• الرصيد النقدي: $${fmt(gl.cashBalance)}\n\n`;
+    summary += `المصاريف\n`;
+    summary += `• إجمالي المصاريف الحالية: $${fmt(gl.opex + gl.cogs)}\n`;
+    if (Object.keys(gl.opexBreakdown).length > 0) {
+      summary += `• تفصيل المصاريف:\n`;
+      Object.entries(gl.opexBreakdown).sort(([,a],[,b]) => b - a).forEach(([k, v]) => {
+        summary += `  - ${k}: $${fmt(v)}\n`;
+      });
+    }
+    summary += `\n`;
+    if (dataSources?.hasAP && ap.totalAP > 0) {
+      summary += `الذمم الدائنة\n`;
+      summary += `• إجمالي المستحقات: $${fmt(ap.totalAP)}\n`;
+      summary += `• عدد الفواتير المستحقة: ${ap.billCount}\n\n`;
+    }
+    summary += `الهيكل التمويلي\n`;
+    if (gl.totalLiabilities > 0) {
+      Object.entries(gl.liabilityBreakdown).sort(([,a],[,b]) => b - a).forEach(([k, v]) => {
+        if (v > 0) summary += `• ${k}: $${fmt(v)}\n`;
+      });
+    }
+    summary += `\n`;
+    summary += `التوصيات\n`;
+    summary += `• [معلومة] الشركة في مرحلة التطوير بدون إيرادات حالية\n`;
+    if (gl.cashBalance < gl.opex * 3) {
+      summary += `• [تحذير] الرصيد النقدي منخفض مقارنة بالمصاريف — مراقبة السيولة\n`;
+    }
+    if (gl.totalLiabilities > gl.totalEquity * 0.5) {
+      summary += `• [متوسط] نسبة الديون مرتفعة — ${((gl.totalLiabilities / gl.totalEquity) * 100).toFixed(0)}% من حقوق الملكية\n`;
+    }
+    if (ap.totalAP > 0) {
+      summary += `• [ملاحظة] هناك $${fmt(ap.totalAP)} ذمم دائنة مستحقة يجب سدادها\n`;
+    }
+  } else {
+    // Normal company with revenue
+    summary += `الملخص المالي\n`;
+    summary += `• إيرادات الشهر الأول: $${fmt(assumptions.m1Revenue)}\n`;
+    summary += `• معدل نمو الإيرادات: ${(assumptions.growthRate * 100).toFixed(1)}%\n`;
+    summary += `• إيرادات 12 شهر المتوقعة: $${fmt(totalRev)}\n`;
+    summary += `• الأرباح التشغيلية 12 شهر: $${fmt(totalEbitda)}\n`;
+    if (totalRev > 0) summary += `• هامش الأرباح التشغيلية: ${((totalEbitda / totalRev) * 100).toFixed(1)}%\n`;
+    summary += `• الرصيد الافتتاحي: $${fmt(startingCash)}\n`;
+    summary += `• الرصيد الختامي (شهر 12): $${fmt(endingCash)}\n`;
+    summary += `• التغير في الوضع النقدي: $${fmt(endingCash - startingCash)}\n\n`;
+    summary += `رأس المال العامل\n`;
+    summary += `• أيام التحصيل (DSO): ${ar.dso.toFixed(1)} يوم\n`;
+    summary += `• أيام السداد (DPO): ${ap.dpo.toFixed(1)} يوم\n`;
+    summary += `• دورة التحويل النقدي (CCC): ${ccc.toFixed(1)} يوم\n`;
+    summary += `• معدل التحصيل: ${(ar.collectionRate * 100).toFixed(1)}%\n\n`;
+    summary += `السيناريوهات\n`;
+    summary += `• الحالة الأساسية — رصيد شهر 12: $${fmt(scenarios.base.endingCashM12)}\n`;
+    summary += `• أفضل حالة — رصيد شهر 12: $${fmt(scenarios.best.endingCashM12)}\n`;
+    summary += `• أسوأ حالة — رصيد شهر 12: $${fmt(scenarios.worst.endingCashM12)}\n\n`;
+    summary += `الديون والتمويل\n`;
+    summary += `• نسبة تغطية خدمة الدين (DSCR): ${funding.dscr.toFixed(2)}x\n`;
+    summary += `• قسط القرض الشهري: $${fmt(funding.pmt)}\n`;
+    summary += `• التسهيل الائتماني المتاح: $${fmt(funding.locSize)}\n\n`;
+
+    summary += `التوصيات الرئيسية\n`;
+    if (ccc > 30) {
+      summary += `• [مرتفع] دورة التحويل النقدي ${ccc.toFixed(0)} يوم — يُنصح بتطبيق خصومات الدفع المبكر وتشديد شروط الائتمان\n`;
+    }
+    if (ar.dso > 45) {
+      summary += `• [مرتفع] أيام التحصيل ${ar.dso.toFixed(0)} يوم — يُنصح بتفعيل تذكيرات الدفع الآلية\n`;
+    }
+    if (funding.dscr < 1.5) {
+      summary += `• [متوسط] نسبة التغطية ${funding.dscr.toFixed(2)}x — قدرة محدودة على الاقتراض، التركيز على نمو الإيرادات\n`;
+    }
+    if (scenarios.worst.minCash < 0) {
+      summary += `• [حرج] السيناريو الأسوأ يُظهر رصيد سلبي — الحفاظ على التسهيل الائتماني وبناء احتياطيات\n`;
+    }
+    if (endingCash > startingCash * 1.5) {
+      summary += `• [فرصة] تراكم نقدي قوي — النظر في إعادة الاستثمار أو السداد المبكر للديون\n`;
+    }
   }
 
   return summary;
