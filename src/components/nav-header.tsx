@@ -7,14 +7,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const navItems = [
-  { href: "/", icon: Upload, label: "Upload" },
-  { href: "/dashboard", icon: BarChart3, label: "Dashboard" },
-  { href: "/forecast", icon: LineChart, label: "Forecast" },
-  { href: "/scenarios", icon: GitBranch, label: "Scenarios" },
-  { href: "/working-capital", icon: Wallet, label: "Working Capital" },
-  { href: "/variance", icon: FileSpreadsheet, label: "Variance" },
-  { href: "/report", icon: FileText, label: "Report" },
-  { href: "/settings", icon: Settings, label: "Settings" },
+  { href: "/", icon: Upload, label: "رفع الملفات" },
+  { href: "/dashboard", icon: BarChart3, label: "لوحة المؤشرات" },
+  { href: "/forecast", icon: LineChart, label: "التوقعات" },
+  { href: "/scenarios", icon: GitBranch, label: "السيناريوهات" },
+  { href: "/working-capital", icon: Wallet, label: "رأس المال العامل" },
+  { href: "/variance", icon: FileSpreadsheet, label: "الانحرافات" },
+  { href: "/report", icon: FileText, label: "التقرير" },
+  { href: "/settings", icon: Settings, label: "الإعدادات" },
 ];
 
 export function NavHeader() {
@@ -29,7 +29,7 @@ export function NavHeader() {
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <TrendingUp className="w-4 h-4 text-primary-foreground" />
           </div>
-          <span className="font-semibold text-sm tracking-tight">FlexFinToolkit</span>
+          <span className="font-semibold text-sm tracking-tight">فليكس فين</span>
         </Link>
 
         <nav className="hidden md:flex items-center gap-1">

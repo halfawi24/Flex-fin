@@ -645,50 +645,52 @@ function generateExecutiveSummary(
   const endingCash = forecast[11].endingCash;
   const startingCash = forecast[0].startingCash;
 
-  let summary = `EXECUTIVE FINANCIAL ANALYSIS\n`;
-  summary += `Generated: ${new Date().toISOString().split('T')[0]}\n\n`;
-  summary += `DATA IMPORTED\n`;
-  summary += `• Accounts Receivable: ${ar.invoiceCount} invoices, $${ar.totalAR.toLocaleString(undefined, {maximumFractionDigits: 0})} total\n`;
-  summary += `• Accounts Payable: ${ap.billCount} bills, $${ap.totalAP.toLocaleString(undefined, {maximumFractionDigits: 0})} total\n`;
-  summary += `• General Ledger: Revenue $${gl.revenue.toLocaleString(undefined, {maximumFractionDigits: 0})} | COGS $${gl.cogs.toLocaleString(undefined, {maximumFractionDigits: 0})} | OpEx $${gl.opex.toLocaleString(undefined, {maximumFractionDigits: 0})}\n\n`;
-  summary += `FINANCIAL SNAPSHOT\n`;
-  summary += `• Revenue (Month 1): $${assumptions.m1Revenue.toLocaleString(undefined, {maximumFractionDigits: 0})}\n`;
-  summary += `• Revenue Growth Rate: ${(assumptions.growthRate * 100).toFixed(1)}%\n`;
-  summary += `• Projected 12-Month Revenue: $${totalRev.toLocaleString(undefined, {maximumFractionDigits: 0})}\n`;
-  summary += `• Projected 12-Month EBITDA: $${totalEbitda.toLocaleString(undefined, {maximumFractionDigits: 0})}\n`;
-  summary += `• EBITDA Margin: ${((totalEbitda / totalRev) * 100).toFixed(1)}%\n`;
-  summary += `• Starting Cash: $${startingCash.toLocaleString(undefined, {maximumFractionDigits: 0})}\n`;
-  summary += `• Ending Cash (Month 12): $${endingCash.toLocaleString(undefined, {maximumFractionDigits: 0})}\n`;
-  summary += `• Cash Position Change: $${(endingCash - startingCash).toLocaleString(undefined, {maximumFractionDigits: 0})}\n\n`;
-  summary += `WORKING CAPITAL\n`;
-  summary += `• DSO: ${ar.dso.toFixed(1)} days\n`;
-  summary += `• DPO: ${ap.dpo.toFixed(1)} days\n`;
-  summary += `• CCC: ${ccc.toFixed(1)} days\n`;
-  summary += `• Collection Rate: ${(ar.collectionRate * 100).toFixed(1)}%\n\n`;
-  summary += `SCENARIOS\n`;
-  summary += `• Base Case M12 Cash: $${scenarios.base.endingCashM12.toLocaleString(undefined, {maximumFractionDigits: 0})}\n`;
-  summary += `• Best Case M12 Cash: $${scenarios.best.endingCashM12.toLocaleString(undefined, {maximumFractionDigits: 0})}\n`;
-  summary += `• Worst Case M12 Cash: $${scenarios.worst.endingCashM12.toLocaleString(undefined, {maximumFractionDigits: 0})}\n\n`;
-  summary += `DEBT & FUNDING\n`;
-  summary += `• DSCR: ${funding.dscr.toFixed(2)}x\n`;
-  summary += `• Term Loan PMT: $${funding.pmt.toLocaleString(undefined, {maximumFractionDigits: 0})}/month\n`;
-  summary += `• LOC Available: $${funding.locSize.toLocaleString(undefined, {maximumFractionDigits: 0})}\n\n`;
+  const fmt = (n: number) => n.toLocaleString('en-US', {maximumFractionDigits: 0});
 
-  summary += `KEY RECOMMENDATIONS\n`;
+  let summary = `التحليل المالي التنفيذي\n`;
+  summary += `تاريخ الإنشاء: ${new Date().toISOString().split('T')[0]}\n\n`;
+  summary += `البيانات المستوردة\n`;
+  summary += `• الحسابات المدينة: ${ar.invoiceCount} فاتورة، إجمالي $${fmt(ar.totalAR)}\n`;
+  summary += `• الحسابات الدائنة: ${ap.billCount} فاتورة، إجمالي $${fmt(ap.totalAP)}\n`;
+  summary += `• دفتر الأستاذ العام: إيرادات $${fmt(gl.revenue)} | تكلفة مبيعات $${fmt(gl.cogs)} | مصاريف تشغيلية $${fmt(gl.opex)}\n\n`;
+  summary += `الملخص المالي\n`;
+  summary += `• إيرادات الشهر الأول: $${fmt(assumptions.m1Revenue)}\n`;
+  summary += `• معدل نمو الإيرادات: ${(assumptions.growthRate * 100).toFixed(1)}%\n`;
+  summary += `• إيرادات 12 شهر المتوقعة: $${fmt(totalRev)}\n`;
+  summary += `• الأرباح التشغيلية 12 شهر: $${fmt(totalEbitda)}\n`;
+  summary += `• هامش الأرباح التشغيلية: ${((totalEbitda / totalRev) * 100).toFixed(1)}%\n`;
+  summary += `• الرصيد الافتتاحي: $${fmt(startingCash)}\n`;
+  summary += `• الرصيد الختامي (شهر 12): $${fmt(endingCash)}\n`;
+  summary += `• التغير في الوضع النقدي: $${fmt(endingCash - startingCash)}\n\n`;
+  summary += `رأس المال العامل\n`;
+  summary += `• أيام التحصيل (DSO): ${ar.dso.toFixed(1)} يوم\n`;
+  summary += `• أيام السداد (DPO): ${ap.dpo.toFixed(1)} يوم\n`;
+  summary += `• دورة التحويل النقدي (CCC): ${ccc.toFixed(1)} يوم\n`;
+  summary += `• معدل التحصيل: ${(ar.collectionRate * 100).toFixed(1)}%\n\n`;
+  summary += `السيناريوهات\n`;
+  summary += `• الحالة الأساسية — رصيد شهر 12: $${fmt(scenarios.base.endingCashM12)}\n`;
+  summary += `• أفضل حالة — رصيد شهر 12: $${fmt(scenarios.best.endingCashM12)}\n`;
+  summary += `• أسوأ حالة — رصيد شهر 12: $${fmt(scenarios.worst.endingCashM12)}\n\n`;
+  summary += `الديون والتمويل\n`;
+  summary += `• نسبة تغطية خدمة الدين (DSCR): ${funding.dscr.toFixed(2)}x\n`;
+  summary += `• قسط القرض الشهري: $${fmt(funding.pmt)}\n`;
+  summary += `• التسهيل الائتماني المتاح: $${fmt(funding.locSize)}\n\n`;
+
+  summary += `التوصيات الرئيسية\n`;
   if (ccc > 30) {
-    summary += `• [HIGH] CCC of ${ccc.toFixed(0)} days — implement early payment discounts and tighten credit terms\n`;
+    summary += `• [مرتفع] دورة التحويل النقدي ${ccc.toFixed(0)} يوم — يُنصح بتطبيق خصومات الدفع المبكر وتشديد شروط الائتمان\n`;
   }
   if (ar.dso > 45) {
-    summary += `• [HIGH] DSO of ${ar.dso.toFixed(0)} days — implement automated payment reminders\n`;
+    summary += `• [مرتفع] أيام التحصيل ${ar.dso.toFixed(0)} يوم — يُنصح بتفعيل تذكيرات الدفع الآلية\n`;
   }
   if (funding.dscr < 1.5) {
-    summary += `• [MEDIUM] DSCR of ${funding.dscr.toFixed(2)}x — limited debt headroom, focus on revenue growth\n`;
+    summary += `• [متوسط] نسبة التغطية ${funding.dscr.toFixed(2)}x — قدرة محدودة على الاقتراض، التركيز على نمو الإيرادات\n`;
   }
   if (scenarios.worst.minCash < 0) {
-    summary += `• [CRITICAL] Worst-case shows negative cash — maintain LOC facility and build reserves\n`;
+    summary += `• [حرج] السيناريو الأسوأ يُظهر رصيد سلبي — الحفاظ على التسهيل الائتماني وبناء احتياطيات\n`;
   }
   if (endingCash > startingCash * 1.5) {
-    summary += `• [OPPORTUNITY] Strong cash accumulation — consider reinvestment or early debt paydown\n`;
+    summary += `• [فرصة] تراكم نقدي قوي — النظر في إعادة الاستثمار أو السداد المبكر للديون\n`;
   }
 
   return summary;

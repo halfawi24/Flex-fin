@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, JetBrains_Mono } from 'next/font/google';
+import { Noto_Kufi_Arabic, JetBrains_Mono } from 'next/font/google';
 import "./globals.css";
 import { ThemeProvider } from "@/app/providers/theme-provider";
 import { AppProvider } from "@/app/providers/app-provider";
 import { NavHeader } from "@/components/nav-header";
 
-const spaceGrotesk = Space_Grotesk({
+const notoKufi = Noto_Kufi_Arabic({
   variable: "--font-sans",
-  subsets: ["latin"],
+  subsets: ["arabic"],
   weight: ["300", "400", "500", "600", "700"],
 });
 
@@ -18,9 +18,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FlexFinToolkit | Financial Analysis Suite",
-  description: "Upload AR/AP/GL data and get instant financial analysis with 12-month forecasts, scenario modeling, and executive reports.",
-  authors: [{ name: "FlexFinToolkit" }],
+  title: "فليكس فين | منصة التحليل المالي",
+  description: "ارفع بيانات الحسابات المدينة والدائنة والأستاذ العام واحصل على تحليل مالي فوري مع توقعات 12 شهر ونمذجة السيناريوهات.",
+  authors: [{ name: "FlexFin" }],
 };
 
 export default function RootLayout({
@@ -29,9 +29,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="ar" dir="rtl" suppressHydrationWarning>
       <body
-        className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased`}
+        className={`${notoKufi.variable} ${jetbrainsMono.variable} antialiased`}
       >
         <ThemeProvider
           attribute="class"

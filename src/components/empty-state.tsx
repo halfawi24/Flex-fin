@@ -15,7 +15,6 @@ export function EmptyState({ title, description }: EmptyStateProps) {
 
   const handleDemo = () => {
     loadDemo();
-    // Stay on current page — data will populate
   };
 
   const handleUpload = () => {
@@ -37,14 +36,14 @@ export function EmptyState({ title, description }: EmptyStateProps) {
           className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-opacity shadow-sm"
         >
           <Play className="w-3.5 h-3.5" />
-          Load Demo Data
+          تحميل بيانات تجريبية
         </button>
         <button
           onClick={handleUpload}
           className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium border border-border rounded-md hover:bg-muted transition-colors"
         >
           <Upload className="w-3.5 h-3.5" />
-          Upload CSVs
+          رفع ملفات
         </button>
       </div>
     </div>

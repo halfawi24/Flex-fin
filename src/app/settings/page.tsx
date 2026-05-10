@@ -19,21 +19,21 @@ interface FieldConfig {
 }
 
 const fields: FieldConfig[] = [
-  { key: "openingCash", label: "Opening Cash Balance", format: "currency", step: 10000, group: "Cash & Revenue" },
-  { key: "m1Revenue", label: "Month 1 Revenue", format: "currency", step: 5000, group: "Cash & Revenue" },
-  { key: "growthRate", label: "Monthly Revenue Growth", format: "percent", step: 0.005, min: -0.1, max: 0.5, group: "Cash & Revenue" },
-  { key: "cogsPct", label: "COGS as % of Revenue", format: "percent", step: 0.01, min: 0, max: 1, group: "Operations" },
-  { key: "monthlyOpex", label: "Monthly Operating Expenses", format: "currency", step: 1000, group: "Operations" },
-  { key: "monthlyCapex", label: "Monthly CapEx", format: "currency", step: 1000, group: "Operations" },
-  { key: "taxRate", label: "Tax Rate", format: "percent", step: 0.01, min: 0, max: 0.5, group: "Operations" },
-  { key: "arDays", label: "AR Days Outstanding (DSO)", format: "number", step: 1, min: 0, max: 120, group: "Working Capital" },
-  { key: "apDays", label: "AP Days Outstanding (DPO)", format: "number", step: 1, min: 0, max: 120, group: "Working Capital" },
-  { key: "locSize", label: "LOC Available", format: "currency", step: 10000, group: "Funding" },
-  { key: "locRate", label: "LOC Interest Rate", format: "percent", step: 0.005, min: 0, max: 0.3, group: "Funding" },
-  { key: "loanAmount", label: "Term Loan Amount", format: "currency", step: 5000, group: "Funding" },
-  { key: "loanTerm", label: "Loan Term", format: "months", step: 6, min: 6, max: 120, group: "Funding" },
-  { key: "loanRate", label: "Loan Annual Rate", format: "percent", step: 0.005, min: 0, max: 0.3, group: "Funding" },
-  { key: "factoringFee", label: "Factoring Fee %", format: "percent", step: 0.005, min: 0, max: 0.1, group: "Funding" },
+  { key: "openingCash", label: "الرصيد النقدي الافتتاحي", format: "currency", step: 10000, group: "النقد والإيرادات" },
+  { key: "m1Revenue", label: "إيرادات الشهر الأول", format: "currency", step: 5000, group: "النقد والإيرادات" },
+  { key: "growthRate", label: "نمو الإيرادات الشهري", format: "percent", step: 0.005, min: -0.1, max: 0.5, group: "النقد والإيرادات" },
+  { key: "cogsPct", label: "تكلفة المبيعات كنسبة من الإيرادات", format: "percent", step: 0.01, min: 0, max: 1, group: "العمليات" },
+  { key: "monthlyOpex", label: "المصاريف التشغيلية الشهرية", format: "currency", step: 1000, group: "العمليات" },
+  { key: "monthlyCapex", label: "النفقات الرأسمالية الشهرية", format: "currency", step: 1000, group: "العمليات" },
+  { key: "taxRate", label: "معدل الضريبة", format: "percent", step: 0.01, min: 0, max: 0.5, group: "العمليات" },
+  { key: "arDays", label: "أيام تحصيل المدينة (DSO)", format: "number", step: 1, min: 0, max: 120, group: "رأس المال العامل" },
+  { key: "apDays", label: "أيام سداد الدائنة (DPO)", format: "number", step: 1, min: 0, max: 120, group: "رأس المال العامل" },
+  { key: "locSize", label: "حجم التسهيل الائتماني", format: "currency", step: 10000, group: "التمويل" },
+  { key: "locRate", label: "معدل فائدة التسهيل", format: "percent", step: 0.005, min: 0, max: 0.3, group: "التمويل" },
+  { key: "loanAmount", label: "مبلغ القرض", format: "currency", step: 5000, group: "التمويل" },
+  { key: "loanTerm", label: "مدة القرض", format: "months", step: 6, min: 6, max: 120, group: "التمويل" },
+  { key: "loanRate", label: "معدل فائدة القرض السنوي", format: "percent", step: 0.005, min: 0, max: 0.3, group: "التمويل" },
+  { key: "factoringFee", label: "رسوم التخصيم %", format: "percent", step: 0.005, min: 0, max: 0.1, group: "التمويل" },
 ];
 
 export default function SettingsPage() {
@@ -70,7 +70,7 @@ export default function SettingsPage() {
   }, [state.analysis]);
 
   if (!state.analysis) {
-    return <EmptyState title="No Analysis Data" description="Upload financial data or load demo data first, then adjust model assumptions here." />;
+    return <EmptyState title="لا توجد بيانات تحليل" description="ارفع بياناتك المالية أو حمّل بيانات تجريبية أولاً، ثم عدّل الافتراضات هنا." />;
   }
 
   if (!localValues) return null;
@@ -79,7 +79,7 @@ export default function SettingsPage() {
     switch (field.format) {
       case "currency": return formatCurrency(val);
       case "percent": return formatPercent(val);
-      case "months": return `${val} months`;
+      case "months": return `${val} شهر`;
       default: return val.toFixed(1);
     }
   }
@@ -94,16 +94,15 @@ export default function SettingsPage() {
     return inputVal;
   }
 
-  // Group fields
   const groups = [...new Set(fields.map(f => f.group))];
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">Model Assumptions</h1>
+          <h1 className="text-xl font-bold">افتراضات النموذج</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Adjust parameters and instantly re-run the 12-month forecast
+            عدّل المعاملات وأعد حساب التوقعات لـ 12 شهر فوراً
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -112,7 +111,7 @@ export default function SettingsPage() {
               onClick={handleReset}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md hover:bg-muted transition-colors"
             >
-              Reset
+              إعادة ضبط
             </button>
           )}
           <button
@@ -125,13 +124,13 @@ export default function SettingsPage() {
             }`}
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            Re-calculate
+            إعادة الحساب
           </button>
         </div>
       </div>
 
       {groups.map(group => (
-        <ChartContainer key={group} title={group} subtitle="Drag sliders to adjust values">
+        <ChartContainer key={group} title={group} subtitle="اسحب المؤشرات لتعديل القيم">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
             {fields.filter(f => f.group === group).map((field) => {
               const val = localValues[field.key] as number;
@@ -141,7 +140,7 @@ export default function SettingsPage() {
                 <div key={field.key} className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs text-muted-foreground">{field.label}</label>
-                    <span className="text-xs font-mono font-semibold">{displayValue(field, val)}</span>
+                    <span className="text-xs font-mono font-semibold" dir="ltr">{displayValue(field, val)}</span>
                   </div>
                   <input
                     type="range"
@@ -152,7 +151,7 @@ export default function SettingsPage() {
                     onChange={(e) => handleChange(field.key, fromInput(field, parseFloat(e.target.value)))}
                     className="w-full h-1.5 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
                   />
-                  <div className="flex justify-between text-[9px] text-muted-foreground/50 font-mono">
+                  <div className="flex justify-between text-[9px] text-muted-foreground/50 font-mono" dir="ltr">
                     <span>{displayValue(field, field.min !== undefined ? field.min : 0)}</span>
                     <span>{displayValue(field, field.max !== undefined ? field.max : val * 3)}</span>
                   </div>
@@ -166,7 +165,7 @@ export default function SettingsPage() {
       {hasChanges && (
         <div className="border border-primary/30 bg-primary/5 rounded-lg p-4">
           <p className="text-xs text-primary font-medium">
-            You have unsaved changes. Click &ldquo;Re-calculate&rdquo; to update all charts and analysis with new assumptions.
+            لديك تغييرات غير محفوظة. اضغط &ldquo;إعادة الحساب&rdquo; لتحديث جميع الرسومات والتحليلات بالافتراضات الجديدة.
           </p>
         </div>
       )}
